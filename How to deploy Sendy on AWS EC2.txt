@@ -1,0 +1,138 @@
+# How to Install Sendy on AWS EC2
+
+ssh -i key.pem ubuntu@xx.xx.xx.xx
+
+### Setup locale
+sudo apt-get install --reinstall language-pack-en
+sudo apt-get install --reinstall locales
+sudo dpkg-reconfigure locales
+sudo dpkg-reconfigure tzdata
+sudo touch /etc/default/locale
+sudo nano /etc/default/locale
+
+##### add this: 
+LANG="en_US.UTF-8"  
+LC_ALL="en_US.UTF-8"  
+LANGUAGE="en_US:en"  
+
+## Install LAMP stack 
+sudo apt-get install tasksel
+sudo tasksel install lamp-server
+
+
+##### setup database 
+sudo mysql_secure_installation
+
+Would you like to setup VALIDATE PASSWORD plugin? [Y/n] n
+ ... skipping.
+ ...
+Change the root password? [Y/n] n  
+ ... skipping.
+ ...
+Remove anonymous users? [Y/n] Y  
+ ... Success!
+ ...
+Disallow root login remotely? [Y/n] Y  
+ ... Success!
+ ...
+Remove test database and access to it? [Y/n] Y  
+ ... Success!
+ ...
+Reload privilege tables now? [Y/n] Y  
+ ... Success!
+ ...
+ 
+All done!
+
+
+##### create database for sendy
+mysql -uroot -p
+create database sendy;
+exit
+
+
+##### Install the cURL PHP and NTP extensions
+apt-get install php7.0-curl ntp
+
+##### Ensure NTP clock is synced
+sudo service ntp stop  
+sudo ntpd -gq  
+sudo service ntp start  
+
+#### Enable mod_rewrite
+sudo a2enmod rewrite
+
+
+#### Install php7.0-xml package
+sudo apt-get install php7.0-xml
+sudo nano /etc/php/7.0/apache2/php.ini
+
+#### Unmark extension=php_xmlrpc.dll section
+
+
+#### Edit your site’s config file
+sudo nano /etc/apache2/sites-enabled/000-default.conf
+
+sudo service apache2 restart
+
+
+### Confirm network security group of AWS EC2. It should add HTTP, HTTPS, SMTP, SMTPS, POP3, POP3S, IMAP, IMAPS ports.
+
+
+##### Create /etc/apache2/site-available/sendy.conf
+sudo nano /etc/apache2/site-available/sendy.conf
+
+<VirtualHost *:80>
+
+	ServerName sendy.greencultured.net
+
+	ServerAdmin admin@greencultured.co
+	DocumentRoot /var/www/html/sendy
+
+	ErrorLog ${APACHE_LOG_DIR}/error.log
+	CustomLog ${APACHE_LOG_DIR}/access.log combined
+
+</VirtualHost>
+
+#### Create new symbolic link file in site-enabled directory
+cd /etc/apache2/site-enabled
+ln -s ../site-available/sendy.conf sendy
+
+sudo service apache2 restart
+
+####### Edit sendy/includes/config.php file
+
+<?php      
+		define('APP_PATH', 'http://sendy.greencultured.net/');
+ 
+    /*  MySQL database connection credentials (please place values between the apostrophes) */
+    $dbHost = 'localhost'; //MySQL Hostname
+    $dbUser = 'root'; //MySQL Username
+    $dbPass = '123456'; //MySQL Password
+    $dbName = 'sendy'; //MySQL Database Name
+
+
+####### set permission of uploads directory as 777
+sudo mkdir uploads/logos
+chmod 777 -Rf uploads
+
+
+###### setup on homepage http://sendy.greencultured.net/_install.php
+
+###### Add cron job for emailing
+sudo crontab -e
+####### Add this:
+*/5 * * * * php /var/www/html/sendy/scheduled.php > /dev/null 2>&1
+
+sudo service cron reload
+or 
+sudo /etc/init.d/cron reload
+
+##### The solution is to remove ONLY_FULL_GROUP_BY from 'sql_mode' in MySQL. Please see instructions by 'Zack' on https://sendy.co/forum/discussion/7752/#Item_6 thread on removing ONLY_FULL_GROUP_BY from 'sql_mode' in MySQL.
+
+sudo nano /etc/mysql/mysql.conf.d/mysqld.cnf
+
+Paste the following at bottom of [mysqld] section
+sql_mode = "STRICT_TRANS_TABLES,ERROR_FOR_DIVISION_BY_ZERO,NO_AUTO_CREATE_USER,NO_ENGINE_SUBSTITUTION"
+
+
